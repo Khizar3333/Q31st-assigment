@@ -1,89 +1,92 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
+from sqlmodel import Session, select
 import uvicorn
+from dotenv import load_dotenv
+from .config.db import createtables,connection
+from .models.todos import Todo,UpdateTodo, Users
+
+load_dotenv()
 
 app=FastAPI()
 
-students:list=[{
-    "name":"khizar",
-    "rollno":30,
-    "age":21,
-    "section":"A",
-}]
-@app.get("/")
-def helloWorld():
-    return {"hello": "world"}
-# this line will call this function automatically when the server starts.
-
-@app.get("/students")
-def get_students():
-    return students
 
 
-@app.get("/singlestudent")
-async def get_student_by_query(rollno: int): 
-    for student in students:
-        if rollno is not None and student.get("rollno") == rollno:
-            return student
-
-    return {"message": "Student not found"}
-
-@app.post("/students")
-def add_student(name:str,rollno:int,age:int,section:str):
-    students.append({"name":name,"rollno":rollno,"age":age,"section":section})
-    return students
-   
-
-
-@app.put("/students/{student_id}")
-def update_student(student_id: int, name: str , rollno: int, age: int, section: str):
-    
-
-    student_found = False
-    for i, student in enumerate(students):
-        if student.get("rollno") == student_id:
-            student_found = True
-            if name is not None:
-                student["name"] = name
-            if rollno is not None:
-                student["rollno"] = rollno
-            if age is not None:
-                student["age"] = age
-            if section is not None:
-                student["section"] = section
-
-
-            break
-
-    if student_found:
-        return student
-    else:
-        return {"message": f"Student with roll number {student_id} not found."}
+# this command check where SQLModel is use and then create that tables    
 
 
 
-@app.delete("/students/{student_id}")
-async def delete_student(student_id: int):
-   
-
-    print(f"Deleting student with roll number: {student_id}")  # Debugging print
-
-    student_found = False
-    for i, student in enumerate(students):
-        if student.get("rollno") == student_id:
-            print(f"Found student at index: {i}")  
-            del students[i]
-            student_found = True
-            break
-
-    if student_found:
-        return {"message": f"Student with roll number {student_id} deleted successfully."}
-    else:
-        return {"message": f"Student with roll number {student_id} not found."}
 
 
+@app.get("/getTodo")
+def get_Todo():
+    # advantage of with :create session,close session,error handling otherwise we have to do all things seperately
+    with Session(connection) as session:
+        statement=select(Todo) 
+        # statement=select(Todo).where(Todo.id==1) 
+        result=session.exec(statement)
+        data=result.all()  
+        print(data)   
+        return data
 
+@app.get("/get_todo{todo_id}")
+def get_todos_single(todo_id:int):
+    with Session(connection) as session:
+        statement = select(Todo).where(Todo.id == todo_id)
+        results = session.exec(statement)
+        data = results.all()
+        print(data)
+        return data    
+
+@app.get("/getuser")
+def get_user():
+    with Session(connection) as session:
+        statement = select(Users)
+        results = session.exec(statement)
+        data = results.all()
+        return data
+
+
+@app.post("/Createtodo")
+def create_todos(todos:Todo):
+    with Session(connection) as session:
+        session.add(todos)
+        session.commit()
+        session.refresh(todos)
+        return {"status":200,"message":"todo created successfully"}   
+        
+@app.post("/createuser")
+def create_user(user:Users):
+    with Session(connection) as session:
+        session.add(user)
+        session.commit()
+        session.refresh(user)
+        return {"status":200,"message":"user created successfully"}
+
+@app.put("/updatetodo/{id}")
+def update_todos(id:int,todo:UpdateTodo):
+    with Session(connection) as session:
+        dbtodo=session.get(Todo,id)
+        if not dbtodo:
+            raise HTTPException(status_code=404,detail="todo not found")
+        tododata=todo.model_dump(exclude_unset=True)
+        dbtodo.sqlmodel_update(tododata)
+        session.add(dbtodo)
+        session.commit()
+        session.refresh(dbtodo)
+        return {"status":200,"message":"todo updated successfully"}
+
+@app.delete("/deletetodo/{todoid}")
+def delete_todo(todoid:int):
+     with Session(connection) as session:
+        dbtodo=session.get(Todo,todoid)
+        if not dbtodo:
+            raise HTTPException(status_code=404,detail="todo not found")
+        session.delete(dbtodo)
+       
+        return {"status":200,"message":"todo deleted successfully"}
 
 def start():
+    createtables()
     uvicorn.run("todos.main:app",host="127.0.0.1", port=8080, reload=True)
 
 
